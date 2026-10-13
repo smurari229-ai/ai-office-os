@@ -1,0 +1,39 @@
+name: Office goal
+description: Submit a goal for the AI Office workflow
+title: "[Office Goal]: "
+labels: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Submit a clear goal. This GitHub-only workflow creates a deterministic task breakdown; it does not call an AI model or perform external actions.
+        Do not include secrets, passwords, API keys, customer data, or other sensitive information.
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: What outcome do you want to achieve?
+      placeholder: Describe the desired outcome in a few sentences.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: How will a human know the work is complete?
+      placeholder: |
+        - [ ] Requirement one
+        - [ ] Requirement two
+    validations:
+      required: true
+  - type: dropdown
+    id: risk
+    attributes:
+      label: Risk level
+      description: Choose the closest fit.
+      options:
+        - Low — docs or planning only
+        - Medium — code changes or tests
+        - High — deployment, payments, data deletion, or external messages
+    validations:
+      required: true

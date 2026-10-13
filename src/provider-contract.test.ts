@@ -18,9 +18,9 @@ const validPlan: ProposedPlan = {
 
 describe("provider contract safety boundary", () => {
   it("accepts valid structured plans and drops unknown fields", () => {
-    const result = validateProposedPlan({ ...validPlan, runShell: "rm -rf /" });
+    const result = validateProposedPlan({ ...validPlan, untrustedInstruction: "ignored" });
     expect(result).toEqual(validPlan);
-    expect("runShell" in result).toBe(false);
+    expect("untrustedInstruction" in result).toBe(false);
   });
 
   it("rejects missing or malformed structured output", () => {
@@ -38,7 +38,7 @@ describe("provider contract safety boundary", () => {
   it("rejects unapproved roles and empty acceptance criteria", () => {
     expect(() => validateProposedPlan({
       ...validPlan,
-      tasks: [{ ...validPlan.tasks[0], owner: "Shell" }],
+      tasks: [{ ...validPlan.tasks[0], owner: "UnknownRole" }],
     })).toThrow(/unknown role/i);
     expect(() => validateProposedPlan({
       ...validPlan,

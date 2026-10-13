@@ -1,0 +1,78 @@
+name: Office Goal Intake
+
+on:
+  issues:
+    types: [opened, edited]
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  plan:
+    if: startsWith(github.event.issue.title, '[Office Goal]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Create or update deterministic plan comment
+        uses: actions/github-script@v7
+        env:
+          GOAL_TITLE: ${{ github.event.issue.title }}
+          GOAL_BODY: ${{ github.event.issue.body }}
+        with:
+          script: |
+            const issue = context.payload.issue;
+            const title = process.env.GOAL_TITLE || "Office Goal";
+            const body = process.env.GOAL_BODY || "";
+            const safeBody = body.replace(/\r/g, "").slice(0, 6000);
+            const plan = [
+              "## AI Office — intake plan (GitHub-only demo)",
+              "",
+              "**Status: PLANNED — no agent has executed work.**",
+              "",
+              "This workflow is deterministic automation, not an AI model. It does not edit code, deploy, send external messages, or access external services.",
+              "",
+              "### Proposed roles",
+              "1. **Boss:** confirm the requested outcome and acceptance criteria.",
+              "2. **Manager:** split the goal into small, reviewable tasks and identify dependencies.",
+              "3. **Developer:** prepare a proposed change on a separate branch after a human approves the task.",
+              "4. **QA:** run relevant tests and report logs; never claim PASS without evidence.",
+              "5. **Founder:** approve risky actions and review the final evidence.",
+              "",
+              "### Safety gate",
+              "- High-risk actions (deployments, payments, destructive changes, outbound messages) require explicit human approval.",
+              "- Do not add credentials or private data to this issue.",
+              "- A plan comment is not evidence that any task is complete.",
+              "",
+              "### Submitted request",
+              "---",
+              safeBody.replace(/\x60/g, "'"),
+              "---",
+              "",
+              "### Next step",
+              "A human should refine this plan, assign an owner, and define verifiable acceptance criteria before execution."
+            ].join("\n");
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue.number,
+              per_page: 100
+            });
+            const marker = "<!-- ai-office-goal-intake -->";
+            const existing = comments.find(c => c.user?.type === "Bot" && c.body?.includes(marker));
+            const bodyWithMarker = marker + "\n" + plan;
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body: bodyWithMarker
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                body: bodyWithMarker
+              });
+            }

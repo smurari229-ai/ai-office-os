@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { planGoal, runDemoStep, summarizeRun, type AgentRole, type OfficeRun, type OfficeTask } from "./workflow";
+import { planGoal, planFromProposal, runDemoStep, summarizeRun, type AgentRole, type OfficeRun, type OfficeTask } from "./workflow";
 
 const AGENTS: { role: AgentRole; icon: string; title: string; description: string; status: string }[] = [
   { role: "Boss", icon: "♛", title: "Boss AI", description: "Goal & acceptance criteria", status: "Planning" },
@@ -29,6 +29,7 @@ export default function App() {
   const [run, setRun] = useState<OfficeRun | null>(() => readSavedRun());
   const [selectedTask, setSelectedTask] = useState<string | null>(null);
   const [notice, setNotice] = useState("");
+  const [isPlanning, setIsPlanning] = useState(false);
 
   useEffect(() => {
     if (run) localStorage.setItem(STORAGE_KEY, JSON.stringify(run));
@@ -38,16 +39,50 @@ export default function App() {
   const summary = useMemo(() => run ? summarizeRun(run) : { total: 0, done: 0, queued: 0, blocked: 0 }, [run]);
   const selected = run?.tasks.find((task) => task.id === selectedTask) ?? run?.tasks[0] ?? null;
 
-  function createPlan(event: FormEvent<HTMLFormElement>) {
+  async function createPlan(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const requestedGoal = goal.trim();
+    if (!requestedGoal) {
+      setNotice("Please enter a goal before requesting an AI plan.");
+      return;
+    }
+    if (requestedGoal.length > 500) {
+      setNotice("Goal must be 500 characters or fewer.");
+      return;
+    }
+    setIsPlanning(true);
+    setNotice("Asking the configured AI provider for a bounded plan…");
+    try {
+      const response = await fetch("/api/plan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ goal: requestedGoal }),
+      });
+      const payload = await response.json() as { error?: string; plan?: unknown };
+      if (!response.ok || !payload.plan) {
+        throw new Error(payload.error || "AI plan request failed.");
+      }
+      const planned = planFromProposal(requestedGoal, payload.plan);
+      setRun(planned);
+      setSelectedTask(planned.tasks[0]?.id ?? null);
+      setNotice("AI plan received and validated. These are proposals only; no code or external action was executed.");
+      setGoal("");
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Could not create the AI plan.");
+    } finally {
+      setIsPlanning(false);
+    }
+  }
+
+  function createDemoPlan() {
     try {
       const planned = planGoal(goal);
       setRun(planned);
       setSelectedTask(planned.tasks[0]?.id ?? null);
-      setNotice("Demo plan created. No external tools or AI API were used.");
+      setNotice("Demo plan created locally. No AI API or external tools were used.");
       setGoal("");
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "Could not create the plan.");
+      setNotice(error instanceof Error ? error.message : "Could not create the demo plan.");
     }
   }
 
@@ -80,7 +115,7 @@ export default function App() {
       </aside>
 
       <main id="home" className="main-content">
-        <header className="topbar"><div className="breadcrumb">Workspace <span>/</span> Overview</div><div className="top-actions"><span className="mode-badge"><i /> DEMO MODE</span><a className="github-link" href="https://github.com/smurari229-ai/ai-office-os" target="_blank" rel="noreferrer">GitHub ↗</a></div></header>
+        <header className="topbar"><div className="breadcrumb">Workspace <span>/</span> Overview</div><div className="top-actions"><span className="mode-badge"><i /> {run?.mode === "ai" ? "AI PLAN" : "DEMO MODE"}</span><a className="github-link" href="https://github.com/smurari229-ai/ai-office-os" target="_blank" rel="noreferrer">GitHub ↗</a></div></header>
         <section id="dashboard" className="welcome-row">
           <div><div className="eyebrow">WEDNESDAY · AI OPERATIONS</div><h1>Your AI office, <em>at a glance.</em></h1><p>Set a goal. Let your virtual team organize the work. You stay in control.</p></div>
           <div className="secure-note"><span>♧</span><div><strong>Human-in-the-loop</strong><small>Consequential actions need approval</small></div></div>
@@ -95,7 +130,7 @@ export default function App() {
 
         <section className="goal-panel">
           <div className="panel-title"><div className="panel-icon">✳</div><div><h2>Give your office a goal</h2><p>The Boss agent will draft a bounded plan for your team.</p></div></div>
-          <form onSubmit={createPlan} className="goal-form"><label htmlFor="goal-input">YOUR OBJECTIVE</label><div className="input-row"><input id="goal-input" value={goal} onChange={(event) => setGoal(event.target.value)} maxLength={500} placeholder="e.g. Prepare a launch checklist for my new product..." /><button className="primary-button" type="submit">✦ Create plan <span>→</span></button></div><div className="form-hint"><span>ⓘ</span> Demo mode only. No repository edits, emails, payments, or external actions are performed.</div></form>
+          <form onSubmit={createPlan} className="goal-form"><label htmlFor="goal-input">YOUR OBJECTIVE</label><div className="input-row"><input id="goal-input" value={goal} onChange={(event) => setGoal(event.target.value)} maxLength={500} placeholder="e.g. Prepare a launch checklist for my new product..." /><button className="primary-button" type="submit" disabled={isPlanning}>{isPlanning ? "Planning…" : "✦ Create AI plan"} <span>→</span></button><button className="secondary-button" type="button" onClick={createDemoPlan} disabled={isPlanning}>Try demo</button></div><div className="form-hint"><span>ⓘ</span> AI mode needs a server-side GEMINI_API_KEY in Vercel. Plans are proposals only; this app does not edit repositories, run code, send emails, or perform external actions.</div></form>
           {notice && <div className="notice" role="status">{notice}</div>}
         </section>
 

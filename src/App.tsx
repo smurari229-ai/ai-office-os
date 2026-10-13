@@ -88,6 +88,10 @@ export default function App() {
 
   function stepForward() {
     if (!run) return;
+    if (run.mode === "ai") {
+      setNotice("AI tasks are proposals only. Real execution and evidence collection are not connected yet.");
+      return;
+    }
     setRun(runDemoStep(run));
     setNotice("One simulated step processed. Check each task's evidence before trusting its status.");
   }
@@ -138,7 +142,7 @@ export default function App() {
           <div className="agent-grid">{AGENTS.map((agent) => <article className="agent-card" key={agent.role}><div className={`agent-icon agent-icon--${agent.role.toLowerCase()}`}>{agent.icon}</div><div className="agent-card-title"><h3>{agent.title}</h3><span className="agent-dot" /></div><p>{agent.description}</p><div className="agent-card-footer"><span>{agent.status}</span><span className="arrow-muted">↗</span></div></article>)}</div>
         </section>
 
-        <section id="tasks" className="section-block task-section"><div className="section-heading"><div><div className="eyebrow">EXECUTION QUEUE</div><h2>Task board <span className="count-badge">{summary.total}</span></h2></div><div className="task-actions"><button className="secondary-button" onClick={resetDemo} disabled={!run}>Reset</button><button className="primary-button primary-button--small" onClick={stepForward} disabled={!run || (summary.queued === 0 && summary.blocked > 0)}>Run next step →</button></div></div>
+        <section id="tasks" className="section-block task-section"><div className="section-heading"><div><div className="eyebrow">EXECUTION QUEUE</div><h2>Task board <span className="count-badge">{summary.total}</span></h2></div><div className="task-actions"><button className="secondary-button" onClick={resetDemo} disabled={!run}>Reset</button><button className="primary-button primary-button--small" onClick={stepForward} disabled={!run || run.mode === "ai" || (summary.queued === 0 && summary.blocked > 0)}>{run?.mode === "ai" ? "Execution not connected" : "Run next step →"}</button></div></div>
           {!run ? <div className="empty-state"><div className="empty-icon">☷</div><h3>Your task board is ready</h3><p>Enter a goal above to generate your first plan.</p></div> : <div className="task-layout"><div className="task-list">{run.tasks.map((task, index) => <button className={`task-row ${selected?.id === task.id ? "task-row--selected" : ""}`} key={task.id} onClick={() => setSelectedTask(task.id)}><span className="task-index">{String(index + 1).padStart(2, "0")}</span><span className="task-main"><strong>{task.title}</strong><small>{task.owner} agent · {task.description}</small></span><StatusPill status={task.status} /></button>)}</div><aside className="task-detail"><div className="eyebrow">TASK DETAILS</div>{selected ? <><h3>{selected.title}</h3><p>{selected.description}</p><div className="detail-label">ASSIGNED ROLE</div><div className="detail-owner"><span className="small-avatar">{selected.owner.slice(0, 1)}</span>{selected.owner} AI</div><div className="detail-label">EVIDENCE / NOTES</div><div className="evidence-box">{selected.detail}</div><StatusPill status={selected.status} /></> : <p>Select a task to inspect it.</p>}</aside></div>}
         </section>
 

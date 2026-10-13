@@ -30,7 +30,7 @@ These are software roles, not independent people. Each role needs explicit tools
 - Responsive dashboard for a virtual AI office.
 - Deterministic demo workflow that runs without API keys or paid services.
 - Goal-to-task breakdown across Boss, Manager, Developer, and QA roles.
-- Task statuses, activity log, demo retry simulation, and local persistence.
+- Task statuses, activity log, bounded demo-step progression, and local browser persistence.
 - No real repository writes, external messages, payments, or deployment actions.
 
 ## Local development

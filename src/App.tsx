@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { planGoal, runDemoStep, summarizeRun, type AgentRole, type OfficeRun, type OfficeTask } from "./workflow";
 
 const AGENTS: { role: AgentRole; icon: string; title: string; description: string; status: string }[] = [
@@ -38,7 +38,7 @@ export default function App() {
   const summary = useMemo(() => run ? summarizeRun(run) : { total: 0, done: 0, queued: 0, blocked: 0 }, [run]);
   const selected = run?.tasks.find((task) => task.id === selectedTask) ?? run?.tasks[0] ?? null;
 
-  function createPlan(event: React.FormEvent<HTMLFormElement>) {
+  function createPlan(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     try {
       const planned = planGoal(goal);

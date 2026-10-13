@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   verify:
-    name: Typecheck, tests, and production build
+    name: Typecheck, tests, dependency audit, and production build
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -24,6 +24,28 @@ jobs:
           node-version: 22
       - name: Install dependencies
         run: npm install
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
+      - name: Report all dependency advisories
+        shell: bash
+        run: |
+          npm audit --json > npm-audit.json || true
+          node --input-type=commonjs -e '
+            const report = require("./npm-audit.json");
+            const vulnerabilities = report.vulnerabilities ?? {};
+            const entries = Object.entries(vulnerabilities);
+            console.log("Full dependency audit: " + (report.metadata?.vulnerabilities ? JSON.stringify(report.metadata.vulnerabilities) : "no summary"));
+            for (const [name, item] of entries) {
+              console.log(JSON.stringify({
+                package: name,
+                severity: item.severity,
+                isDirect: item.isDirect,
+                range: item.range,
+                fixAvailable: item.fixAvailable,
+                advisories: (item.via ?? []).map(v => typeof v === "string" ? v : { title: v.title, url: v.url, range: v.range })
+              }));
+            }
+          '
       - name: Run unit tests
         run: npm test
       - name: Build production bundle

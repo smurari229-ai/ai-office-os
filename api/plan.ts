@@ -1,4 +1,4 @@
-import { validateProposedPlan, validateProviderBudget, DEFAULT_PROVIDER_BUDGET } from "../src/provider-contract";
+import { validateProposedPlan, validateProviderBudget, DEFAULT_PROVIDER_BUDGET } from "../src/provider-contract.js";
 
 interface RequestLike {
   method?: string;

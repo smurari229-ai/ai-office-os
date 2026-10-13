@@ -1,3 +1,5 @@
+import { validateProposedPlan, type ProposedPlan } from "./provider-contract";
+
 export type AgentRole = "Boss" | "Manager" | "Developer" | "QA";
 export type TaskStatus = "queued" | "in_progress" | "blocked" | "done";
 
@@ -49,7 +51,7 @@ export function planFromProposal(goalInput: string, proposalInput: unknown, now 
   if (!goal) throw new Error("Please enter a goal before creating a plan.");
   if (goal.length > 500) throw new Error("Goal must be 500 characters or fewer.");
   const proposal: ProposedPlan = validateProposedPlan(proposalInput);
-  const tasks: OfficeTask[] = proposal.tasks.map((task, index) => ({
+  const tasks: OfficeTask[] = proposal.tasks.map((task) => ({
     id: makeId(),
     title: task.title,
     description: task.description,

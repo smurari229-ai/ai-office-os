@@ -16,7 +16,7 @@ export interface OfficeRun {
   createdAt: string;
   tasks: OfficeTask[];
   log: string[];
-  mode: "demo";
+  mode: "demo" | "ai";
 }
 
 const makeId = () => globalThis.crypto?.randomUUID?.() ?? `task-${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -40,6 +40,30 @@ export function planGoal(goalInput: string, now = new Date()): OfficeRun {
     tasks,
     log: ["Founder submitted a goal.", "Boss created success-criteria task.", "Manager organized a bounded demo plan.", "Developer and QA tasks are queued. No real tools or external services were used."],
     mode: "demo",
+  };
+}
+
+
+export function planFromProposal(goalInput: string, proposalInput: unknown, now = new Date()): OfficeRun {
+  const goal = goalInput.trim();
+  if (!goal) throw new Error("Please enter a goal before creating a plan.");
+  if (goal.length > 500) throw new Error("Goal must be 500 characters or fewer.");
+  const proposal: ProposedPlan = validateProposedPlan(proposalInput);
+  const tasks: OfficeTask[] = proposal.tasks.map((task, index) => ({
+    id: makeId(),
+    title: task.title,
+    description: task.description,
+    owner: task.owner,
+    status: "queued",
+    detail: `AI-proposed acceptance criteria:\\n${task.acceptanceCriteria.map((item) => `• ${item}`).join("\\n")}\\nNo code, external service, or real-world action has been executed.`,
+  }));
+  return {
+    id: makeId(),
+    goal,
+    createdAt: now.toISOString(),
+    tasks,
+    log: [`Gemini proposed a plan: ${proposal.summary}`, "All tasks are proposals only. Human review is required before execution."],
+    mode: "ai",
   };
 }
 

@@ -151,7 +151,7 @@ export default async function handler(req: RequestLike, res: ResponseLike) {
       return fail(res, requestId, 502, "AI provider did not return valid JSON. Please retry.");
     }
 
-    let plan;
+    let plan: ReturnType<typeof validateProposedPlan>;
     try {
       plan = validateProposedPlan(parsed);
     } catch {

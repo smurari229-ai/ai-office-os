@@ -1,61 +1,59 @@
 # AI Office OS
 
-**An open-source, GitHub-centred multi-agent workspace** for planning work, assigning tasks, proposing changes, and verifying results.
+**AI Office OS is an early MVP for real AI-assisted planning and user-scoped workflow records.**
 
-> **Status:** early MVP. The application has a real server-side Gemini planning endpoint when configured. It returns a validated task proposal; it does **not** execute tasks, persist server-side workflows, modify repositories, or prove proposed work was completed. Authentication, durable multi-user storage, GitHub OAuth/write workflows, and isolated code execution are not implemented. This is not production-ready and does not guarantee correct output or income.
+> **Important status:** this branch adds a real server-side Gemini planning endpoint, Supabase email authentication endpoints, and an authenticated Supabase workflow persistence API with row-level security. These features are usable only after the owner configures the provider and database migration. The application still does **not** execute code, run an autonomous multi-agent loop, edit repositories, create GitHub PRs, or verify proposed tasks. It is not production-ready and does not guarantee correct output or income.
 
-## Vision
+## Implemented in this branch
 
-- **Founder:** sets goals and approves consequential actions.
-- **Boss agent:** turns goals into outcomes and acceptance criteria.
-- **Manager agent:** breaks work into small tasks and tracks status.
-- **Developer agent:** proposes code changes for review.
-- **QA agent:** checks results against tests and acceptance criteria.
-- **Operations agent:** monitors workflow progress and reports blockers.
+- Server-side Gemini plan generation through `POST /api/plan`; no fake AI fallback.
+- Strict validation of model output, input limits, timeouts, bounded provider retry, request IDs, and redacted structured logs.
+- Supabase email sign-up/sign-in through `POST /api/auth`. Access tokens are held in application memory only and cleared on refresh/sign-out.
+- `GET /api/tasks` and `POST /api/tasks` authenticate the supplied access token against Supabase Auth before using it against PostgREST.
+- Migration at `supabase/migrations/202610140001_office_workflows.sql` creates user-owned workflow records, constraints, unique idempotency keys, and RLS policies.
+- Dashboard can generate a validated AI proposal, save it to the user's database, and load that user's saved workflow list.
+- UI labels unexecuted proposals as proposals; it does not show simulated tasks as verified completions.
 
-These are software roles, not independent people. The current AI endpoint makes one model request to draft a plan; the role names in that plan are assignments, not five independently running agents.
+## Not implemented / not production-ready
 
-## Current features
+- Persistent background worker/orchestration, task dependencies and retries, pause/resume/cancel.
+- Independent Boss/Manager/Developer/QA/Operations agent executions.
+- GitHub OAuth/repository access, patch review, branch/commit/PR creation, and CI result retrieval.
+- Isolated code execution, verified QA, production deployment automation.
+- MFA, password reset/session refresh flow, distributed rate limiting, and comprehensive production monitoring.
+- Production readiness requires independent security review, live integration tests, deployment verification, and owner-controlled credentials.
 
-- Responsive dashboard for the office workspace.
-- Real server-side Gemini request through `POST /api/plan` when configured.
-- Strict validation of AI-proposed tasks and acceptance criteria.
-- Input limits, request timeout, bounded retry for transient provider server errors, in-memory per-instance rate limiting, request IDs, and redacted structured logs.
-- Explicit missing-credential/provider errors instead of fake AI output.
-- A clearly labelled local demo workflow remains available; its progress is simulated and must not be treated as evidence.
-- No real task execution, durable server-side task persistence, user authentication, GitHub writes, or safe arbitrary-code sandbox yet.
-
-## Local development
+## Setup
 
 Requirements: Node.js 22+ and npm.
 
+1. Create a Supabase project.
+2. In Supabase SQL Editor, run `supabase/migrations/202610140001_office_workflows.sql`.
+3. Add server-side environment variables in Vercel (or your Node server):
+   - `SUPABASE_URL`: project URL, e.g. `https://YOUR_PROJECT.supabase.co`
+   - `SUPABASE_ANON_KEY`: project's public anon/publishable key; do not use a service-role key
+   - `GEMINI_API_KEY`: server-side Gemini API key
+   - `GEMINI_MODEL`: optional, defaults to `gemini-2.5-flash`
+4. Redeploy after setting variables. For signup, follow the Supabase project's email verification settings.
+5. Open the deployed app, create/sign into an account, then submit a goal. A successful workflow save confirms only a persisted **proposal**; no task is executed.
+
+Never prefix server secrets with `VITE_`. See `.env.example`.
+
+## Local commands
+
 ```bash
 npm install
-npm run dev
 npm run typecheck:api
 npm test
 npm run build
 ```
 
-The frontend is Vite/React. The `api/plan.ts` handler is designed for a serverless Node-compatible deployment such as Vercel; Vite's dev server does not automatically provide production serverless routes unless a matching local adapter is configured.
+Vite's dev server does not automatically provide production serverless API routes. Use a matching local serverless adapter or test API routes on the configured deployment platform.
 
-## Configure real AI
+## Cost and security notes
 
-1. Create a Gemini API key in Google AI Studio and review current quotas and pricing before use.
-2. Set `GEMINI_API_KEY` as a **server-side Secret** in your hosting provider. Never use a `VITE_` prefix.
-3. Optionally set `GEMINI_MODEL` (default: `gemini-2.5-flash`) as a server-side environment variable.
-4. Redeploy after adding or changing environment variables.
-5. Submit a goal. A successful response means only that the model returned a schema-valid proposal; it does not mean tasks were executed.
-
-See `.env.example` for variable names. Free-tier access, quota, and availability depend on provider terms and can change. The application does not promise unlimited free AI or a fixed cost.
-
-## Verification and security boundaries
-
-- `npm run typecheck:api` checks the server API's TypeScript.
-- `npm test` runs unit tests, including API boundary tests.
-- `npm run build` builds the frontend.
-- API rate limiting is in-memory and per runtime instance; it is not a distributed quota system.
-- There is no production-grade authentication or per-user authorization yet. Do not submit confidential goals or private repository contents.
-- Do not enable repository writes, deployments, payments, destructive actions, or arbitrary code execution without explicit approval gates and a separately reviewed implementation.
-
-See [SECURITY.md](./SECURITY.md) for the current safe-use policy.
+- Gemini quota, free-tier availability, and pricing depend on current provider terms; unlimited free AI is not promised.
+- The planning endpoint has an in-memory per-runtime rate limit. It is not a distributed quota or billing system.
+- Supabase Auth and RLS scope records by the authenticated user. Do not submit confidential material until the deployment has been independently reviewed.
+- No service-role key is needed by these endpoints. Never expose one in frontend code.
+- A successful API plan/save does not mean code was changed, tests passed, or any real-world action completed.

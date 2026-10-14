@@ -151,7 +151,13 @@ export default async function handler(req: RequestLike, res: ResponseLike) {
       return fail(res, requestId, 502, "AI provider did not return valid JSON. Please retry.");
     }
 
-    const plan = validateProposedPlan(parsed);
+    let plan;
+    try {
+      plan = validateProposedPlan(parsed);
+    } catch {
+      logSafe("provider_invalid_output", { requestId, status: 502, model, durationMs: Date.now() - startedAt });
+      return fail(res, requestId, 502, "AI provider returned a plan that failed validation. Please retry.");
+    }
     logSafe("plan_created", {
       requestId, status: 200, model, taskCount: plan.tasks.length,
       promptTokens: providerPayload.usageMetadata?.promptTokenCount,

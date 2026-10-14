@@ -9,5 +9,5 @@
     "skipLibCheck": true,
     "noEmit": true
   },
-  "include": ["api/plan.ts", "src/provider-contract.ts"]
+  "include": ["api/**/*.ts", "src/provider-contract.ts"]
 }

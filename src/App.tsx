@@ -242,6 +242,7 @@ export default function App() {
         <a className="nav-item" href="#agents"><span>◈</span> Agent roles <span className="nav-count">4</span></a>
         <a className="nav-item" href="#tasks"><span>☷</span> Proposed tasks</a>
         <a className="nav-item" href="#activity"><span>◷</span> Saved workflows</a>
+        <a className="nav-item" href="#approval-history"><span>✓</span> Approval history</a>
         <div className="sidebar-bottom">
           <div className="founder-avatar">F</div>
           <div><strong>{signedInEmail || "Founder workspace"}</strong><small>{accessToken ? "Authenticated session" : "Sign in required"}</small></div>

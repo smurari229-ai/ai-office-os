@@ -33,6 +33,7 @@ export default function App() {
   const [signedInEmail, setSignedInEmail] = useState("");
   const [authBusy, setAuthBusy] = useState(false);
   const [savedWorkflows, setSavedWorkflows] = useState<SavedWorkflow[]>([]);
+  const [decisionBusy, setDecisionBusy] = useState<string | null>(null);
 
   const summary = useMemo(() => run ? summarizeRun(run) : { total: 0, done: 0, queued: 0, blocked: 0 }, [run]);
   const selected = run?.tasks.find((task) => task.id === selectedTask) ?? run?.tasks[0] ?? null;
@@ -42,6 +43,32 @@ export default function App() {
     const payload = await response.json() as { error?: string; workflows?: SavedWorkflow[] };
     if (!response.ok) throw new Error(payload.error || "Saved workflow history could not be loaded.");
     setSavedWorkflows(payload.workflows ?? []);
+  }
+
+  async function decideWorkflow(workflowId: string, decision: "approve" | "reject") {
+    if (!accessToken || decisionBusy) return;
+    setDecisionBusy(workflowId);
+    setNotice(decision === "approve" ? "Approval decision save ho rahi hai…" : "Rejection decision save ho rahi hai…");
+    try {
+      const response = await fetch("/api/approve", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({ workflowId, decision }),
+      });
+      const payload = await response.json() as { error?: string; status?: string; auditRecorded?: boolean };
+      if (!response.ok || payload.auditRecorded !== true) {
+        throw new Error(payload.error || "Database did not confirm an audited decision.");
+      }
+      await refreshSaved(accessToken);
+      setNotice(`Decision recorded: ${payload.status}. This records human approval only; no task has been executed.`);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Decision could not be recorded.");
+    } finally {
+      setDecisionBusy(null);
+    }
   }
 
   async function authenticate(action: "signin" | "signup") {
@@ -196,7 +223,7 @@ export default function App() {
           {!run ? <div className="empty-state"><div className="empty-icon">☷</div><h3>No current proposal</h3><p>Sign in, configure services, and submit an objective to create a real AI plan.</p></div> : <div className="task-layout"><div className="task-list">{run.tasks.map((task, index) => <button className={`task-row ${selected?.id === task.id ? "task-row--selected" : ""}`} key={task.id} onClick={() => setSelectedTask(task.id)}><span className="task-index">{String(index + 1).padStart(2, "0")}</span><span className="task-main"><strong>{task.title}</strong><small>{task.owner} role · {task.description}</small></span><StatusPill status={task.status} /></button>)}</div><aside className="task-detail"><div className="eyebrow">PROPOSAL DETAILS</div>{selected ? <><h3>{selected.title}</h3><p>{selected.description}</p><div className="detail-label">ASSIGNED ROLE</div><div className="detail-owner"><span className="small-avatar">{selected.owner.slice(0, 1)}</span>{selected.owner} role</div><div className="detail-label">EVIDENCE / ACCEPTANCE</div><div className="evidence-box">{selected.detail}</div><StatusPill status={selected.status} /></> : <p>Select a task to inspect it.</p>}</aside></div>}
         </section>
 
-        <section id="activity" className="section-block activity-section"><div className="section-heading"><div><div className="eyebrow">DATABASE RECORDS</div><h2>Saved workflows</h2></div><span className="subtle-label">SUPABASE · USER-SCOPED</span></div><div className="activity-list">{savedWorkflows.length ? savedWorkflows.map((item) => <div className="activity-item" key={item.id}><span className="activity-dot activity-dot--latest" /><p><strong>{item.goal}</strong><br /><small>{item.plan?.tasks?.length ?? 0} proposed tasks · {item.status} · {new Date(item.created_at).toLocaleString()}</small></p><time>{item.id.slice(0, 8)}</time></div>) : <div className="empty-state"><h3>No saved workflows loaded</h3><p>Sign in after configuring Supabase to view your own records.</p></div>}</div></section>
+        <section id="activity" className="section-block activity-section"><div className="section-heading"><div><div className="eyebrow">DATABASE RECORDS</div><h2>Saved workflows</h2></div><span className="subtle-label">SUPABASE · USER-SCOPED</span></div><div className="activity-list">{savedWorkflows.length ? savedWorkflows.map((item) => <div className="activity-item" key={item.id}><span className="activity-dot activity-dot--latest" /><p><strong>{item.goal}</strong><br /><small>{item.plan?.tasks?.length ?? 0} proposed tasks · {item.status} · {new Date(item.created_at).toLocaleString()}</small></p><time>{item.id.slice(0, 8)}</time>{(item.status === "PROPOSED" || item.status === "WAITING_FOR_APPROVAL") && <div className="workflow-decision-actions"><button className="primary-button" type="button" disabled={decisionBusy !== null} onClick={() => void decideWorkflow(item.id, "approve")}>{decisionBusy === item.id ? "Saving…" : "Approve"}</button><button className="secondary-button" type="button" disabled={decisionBusy !== null} onClick={() => void decideWorkflow(item.id, "reject")}>Reject</button></div>}</div>) : <div className="empty-state"><h3>No saved workflows loaded</h3><p>Sign in after configuring Supabase to view your own records.</p></div>}</div></section>
         <footer className="footer"><span>AI OFFICE OS <span className="footer-separator">·</span> EARLY MVP</span><span>Real planning + persistence slice · execution NOT_IMPLEMENTED</span></footer>
       </main>
     </div>

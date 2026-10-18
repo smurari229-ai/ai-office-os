@@ -12,11 +12,13 @@
 - `GET /api/tasks` and `POST /api/tasks` authenticate the supplied access token against Supabase Auth before using it against PostgREST.
 - Migration at `supabase/migrations/202610140001_office_workflows.sql` creates user-owned workflow records, constraints, unique idempotency keys, and RLS policies.
 - Dashboard can generate a validated AI proposal, save it to the user's database, and load that user's saved workflow list.
+- Authenticated users can approve or reject a saved proposal; the decision and prior/next status are recorded atomically in an approval audit table.
 - UI labels unexecuted proposals as proposals; it does not show simulated tasks as verified completions.
 
 ## Not implemented / not production-ready
 
 - Persistent background worker/orchestration, task dependencies and retries, pause/resume/cancel.
+- Approval records authorize a proposal only; approval does not run code, call external services, or mark work completed.
 - Independent Boss/Manager/Developer/QA/Operations agent executions.
 - GitHub OAuth/repository access, patch review, branch/commit/PR creation, and CI result retrieval.
 - Isolated code execution, verified QA, production deployment automation.
@@ -28,7 +30,7 @@
 Requirements: Node.js 22+ and npm.
 
 1. Create a Supabase project.
-2. In Supabase SQL Editor, run `supabase/migrations/202610140001_office_workflows.sql`.
+2. In Supabase SQL Editor, run `supabase/migrations/202610140001_office_workflows.sql`, then `supabase/migrations/202610180001_office_workflow_approvals.sql`.
 3. Add server-side environment variables in Vercel (or your Node server):
    - `SUPABASE_URL`: project URL, e.g. `https://YOUR_PROJECT.supabase.co`
    - `SUPABASE_ANON_KEY`: project's public anon/publishable key; do not use a service-role key

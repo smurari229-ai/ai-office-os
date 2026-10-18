@@ -13,6 +13,7 @@
 - Migration at `supabase/migrations/202610140001_office_workflows.sql` creates user-owned workflow records, constraints, unique idempotency keys, and RLS policies.
 - Dashboard can generate a validated AI proposal, save it to the user's database, and load that user's saved workflow list.
 - Authenticated users can approve or reject a saved proposal; the decision and prior/next status are recorded atomically in an approval audit table.
+- `GET /api/approval-events` returns the signed-in user’s own approval history, and the dashboard displays the latest audit events after sign-in and after each decision.
 - An approved task can generate one bounded text/Markdown artifact with Gemini, receive a separate model-based QA verdict, and save both to a user-owned task-run table. It does not run code or perform external actions.
 - UI labels unexecuted proposals as proposals; it does not show simulated tasks as verified completions.
 
@@ -25,6 +26,7 @@
 - GitHub OAuth/repository access, patch review, branch/commit/PR creation, and CI result retrieval.
 - Isolated code execution, verified QA, production deployment automation.
 - MFA, password reset/session refresh flow, distributed rate limiting, and comprehensive production monitoring.
+- Approval history currently loads the most recent 100 events; export, filtering, and retention controls are not implemented.
 - Production readiness requires independent security review, live integration tests, deployment verification, and owner-controlled credentials.
 
 ## Setup

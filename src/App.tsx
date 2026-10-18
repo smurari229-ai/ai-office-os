@@ -33,6 +33,7 @@ export default function App() {
   const [signedInEmail, setSignedInEmail] = useState("");
   const [authBusy, setAuthBusy] = useState(false);
   const [savedWorkflows, setSavedWorkflows] = useState<SavedWorkflow[]>([]);
+  const [approvalEvents, setApprovalEvents] = useState<Array<{ id: string; workflow_id: string; decision: string; from_status: string; to_status: string; created_at: string }>>([]);
   const [decisionBusy, setDecisionBusy] = useState<string | null>(null);
   const [taskRunBusy, setTaskRunBusy] = useState<string | null>(null);
   const [taskResults, setTaskResults] = useState<Record<string, { status: string; artifact: string; feedback: string }>>({});
@@ -56,6 +57,13 @@ export default function App() {
       };
     }
     setTaskResults(mapped);
+  }
+
+  async function refreshApprovalEvents(token: string) {
+    const response = await fetch("/api/approval-events", { headers: { Authorization: `Bearer ${token}` } });
+    const payload = await response.json() as { error?: string; events?: typeof approvalEvents };
+    if (!response.ok) throw new Error(payload.error || "Approval history could not be loaded.");
+    setApprovalEvents(payload.events ?? []);
   }
 
   async function refreshSaved(token: string) {
@@ -114,6 +122,7 @@ export default function App() {
         throw new Error(payload.error || "Database did not confirm an audited decision.");
       }
       await refreshSaved(accessToken);
+      await refreshApprovalEvents(accessToken);
       setNotice(`Decision recorded: ${payload.status}. This records human approval only; no task has been executed.`);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Decision could not be recorded.");
@@ -148,7 +157,8 @@ export default function App() {
       setPassword("");
       await refreshSaved(payload.accessToken);
       await refreshTaskRuns(payload.accessToken);
-      setNotice("Sign in successful. Saved workflows and task artifacts are loaded from Supabase.");
+      await refreshApprovalEvents(payload.accessToken);
+      setNotice("Sign in successful. Saved workflows, task artifacts, and approval history are loaded from Supabase.");
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Authentication failed.");
     } finally {
@@ -160,6 +170,8 @@ export default function App() {
     setAccessToken(null);
     setSignedInEmail("");
     setSavedWorkflows([]);
+    setApprovalEvents([]);
+    setTaskResults({});
     setRun(null);
     setSelectedTask(null);
     setNotice("Signed out. The in-memory session was cleared.");
@@ -276,6 +288,14 @@ export default function App() {
         </section>
 
         <section id="activity" className="section-block activity-section"><div className="section-heading"><div><div className="eyebrow">DATABASE RECORDS</div><h2>Saved workflows</h2></div><span className="subtle-label">SUPABASE · USER-SCOPED</span></div><div className="activity-list">{savedWorkflows.length ? savedWorkflows.map((item) => <div className="activity-item" key={item.id}><span className="activity-dot activity-dot--latest" /><p><strong>{item.goal}</strong><br /><small>{item.plan?.tasks?.length ?? 0} proposed tasks · {item.status} · {new Date(item.created_at).toLocaleString()}</small></p><time>{item.id.slice(0, 8)}</time>{(item.status === "PROPOSED" || item.status === "WAITING_FOR_APPROVAL") && <div className="workflow-decision-actions"><button className="primary-button" type="button" disabled={decisionBusy !== null} onClick={() => void decideWorkflow(item.id, "approve")}>{decisionBusy === item.id ? "Saving…" : "Approve"}</button><button className="secondary-button" type="button" disabled={decisionBusy !== null} onClick={() => void decideWorkflow(item.id, "reject")}>Reject</button></div>}{item.status === "APPROVED" && <div className="saved-task-runs"><strong>Approved tasks · artifact generation only</strong>{item.plan?.tasks?.map((task, index) => { const key = `${item.id}:${index}`; const result = taskResults[key]; return <div className="saved-task-run" key={key}><span>{index + 1}. {task.title}</span><button className="secondary-button" type="button" disabled={taskRunBusy !== null} onClick={() => void runApprovedTask(item.id, index)}>{taskRunBusy === key ? "Running QA…" : "Generate & QA"}</button>{result && <div className="task-artifact-result"><small>Status: {result.status} · external actions: none</small><p>{result.artifact}</p><small>QA: {result.feedback}</small></div>}</div>; })}</div>}</div>) : <div className="empty-state"><h3>No saved workflows loaded</h3><p>Sign in after configuring Supabase to view your own records.</p></div>}</div></section>
+        <section id="approval-history" className="section-block activity-section">
+          <div className="section-heading"><div><div className="eyebrow">AUDIT TRAIL</div><h2>Approval history</h2></div><span className="subtle-label">SUPABASE · READ ONLY</span></div>
+          <div className="activity-list">{approvalEvents.length ? approvalEvents.map((event) => <div className="activity-item" key={event.id}>
+            <span className="activity-dot activity-dot--latest" />
+            <p><strong>{event.decision === "approve" ? "Approved" : "Rejected"} workflow</strong><br /><small>{event.from_status} → {event.to_status} · {new Date(event.created_at).toLocaleString()}</small></p>
+            <time>{event.workflow_id.slice(0, 8)}</time>
+          </div>) : <div className="empty-state"><h3>No approval events loaded</h3><p>Sign in and approve or reject a saved proposal. Only your own audit events are returned.</p></div>}</div>
+        </section>
         <footer className="footer"><span>AI OFFICE OS <span className="footer-separator">·</span> EARLY MVP</span><span>Real planning + persistence slice · execution NOT_IMPLEMENTED</span></footer>
       </main>
     </div>

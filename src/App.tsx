@@ -40,6 +40,24 @@ export default function App() {
   const summary = useMemo(() => run ? summarizeRun(run) : { total: 0, done: 0, queued: 0, blocked: 0 }, [run]);
   const selected = run?.tasks.find((task) => task.id === selectedTask) ?? run?.tasks[0] ?? null;
 
+  async function refreshTaskRuns(token: string) {
+    const response = await fetch("/api/task-runs", { headers: { Authorization: `Bearer ${token}` } });
+    const payload = await response.json() as {
+      error?: string;
+      runs?: Array<{ workflow_id: string; task_index: number; status: string; artifact: string; qa_feedback: string }>;
+    };
+    if (!response.ok) throw new Error(payload.error || "Saved task artifacts could not be loaded.");
+    const mapped: Record<string, { status: string; artifact: string; feedback: string }> = {};
+    for (const item of payload.runs ?? []) {
+      mapped[`${item.workflow_id}:${item.task_index}`] = {
+        status: item.status,
+        artifact: item.artifact,
+        feedback: item.qa_feedback,
+      };
+    }
+    setTaskResults(mapped);
+  }
+
   async function refreshSaved(token: string) {
     const response = await fetch("/api/tasks", { headers: { Authorization: `Bearer ${token}` } });
     const payload = await response.json() as { error?: string; workflows?: SavedWorkflow[] };
@@ -69,6 +87,7 @@ export default function App() {
         ...current,
         [key]: { status: payload.run!.status!, artifact: payload.artifact!, feedback: payload.qa!.feedback || "No QA feedback returned." },
       }));
+      await refreshTaskRuns(accessToken);
       setNotice(`Task artifact saved with status ${payload.run.status}. External actions performed: no.`);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Task artifact generation failed.");
@@ -128,7 +147,8 @@ export default function App() {
       setSignedInEmail(payload.user?.email || email.trim());
       setPassword("");
       await refreshSaved(payload.accessToken);
-      setNotice("Sign in successful. Saved workflows are loaded from Supabase.");
+      await refreshTaskRuns(payload.accessToken);
+      setNotice("Sign in successful. Saved workflows and task artifacts are loaded from Supabase.");
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Authentication failed.");
     } finally {

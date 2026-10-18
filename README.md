@@ -13,12 +13,14 @@
 - Migration at `supabase/migrations/202610140001_office_workflows.sql` creates user-owned workflow records, constraints, unique idempotency keys, and RLS policies.
 - Dashboard can generate a validated AI proposal, save it to the user's database, and load that user's saved workflow list.
 - Authenticated users can approve or reject a saved proposal; the decision and prior/next status are recorded atomically in an approval audit table.
+- An approved task can generate one bounded text/Markdown artifact with Gemini, receive a separate model-based QA verdict, and save both to a user-owned task-run table. It does not run code or perform external actions.
 - UI labels unexecuted proposals as proposals; it does not show simulated tasks as verified completions.
 
 ## Not implemented / not production-ready
 
 - Persistent background worker/orchestration, task dependencies and retries, pause/resume/cancel.
-- Approval records authorize a proposal only; approval does not run code, call external services, or mark work completed.
+- Approval records authorize a proposal only. The task runner produces and QA-checks text/Markdown artifacts; it does not run code, call external services, modify repositories, or deploy applications.
+- QA is model-based and is not a substitute for deterministic tests or human review.
 - Independent Boss/Manager/Developer/QA/Operations agent executions.
 - GitHub OAuth/repository access, patch review, branch/commit/PR creation, and CI result retrieval.
 - Isolated code execution, verified QA, production deployment automation.
@@ -30,7 +32,7 @@
 Requirements: Node.js 22+ and npm.
 
 1. Create a Supabase project.
-2. In Supabase SQL Editor, run `supabase/migrations/202610140001_office_workflows.sql`, then `supabase/migrations/202610180001_office_workflow_approvals.sql`.
+2. In Supabase SQL Editor, run these migrations in order: `202610140001_office_workflows.sql`, `202610180001_office_workflow_approvals.sql`, then `202610180002_office_task_runs.sql` (all under `supabase/migrations/`).
 3. Add server-side environment variables in Vercel (or your Node server):
    - `SUPABASE_URL`: project URL, e.g. `https://YOUR_PROJECT.supabase.co`
    - `SUPABASE_ANON_KEY`: project's public anon/publishable key; do not use a service-role key

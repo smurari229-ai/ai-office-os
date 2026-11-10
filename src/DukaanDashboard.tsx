@@ -6,7 +6,13 @@ type Lead = { id: string; name: string; phone: string; need: string; status: Lea
 const KEY = "dukaanai-leads-v1";
 const initial: Lead[] = [];
 
-function localDate(): string {\n  const now = new Date();\n  const pad = (value: number) => String(value).padStart(2, "0");\n  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;\n}\n\nfunction loadLeads(): Lead[] {
+function localDate(): string {
+  const now = new Date();
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
+
+function loadLeads(): Lead[] {
   try { const raw = localStorage.getItem(KEY); return raw ? JSON.parse(raw) as Lead[] : initial; }
   catch { return initial; }
 }

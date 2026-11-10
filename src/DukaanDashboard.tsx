@@ -1,20 +1,27 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
+import type { User } from "@supabase/supabase-js";
+import { isSupabaseConfigured, supabase } from "./lib/supabase";
 
 type LeadStatus = "New" | "Contacted" | "Interested" | "Converted" | "Lost";
 type Lead = { id: string; name: string; phone: string; need: string; status: LeadStatus; followUp: string; createdAt: string };
 
 const KEY = "dukaanai-leads-v1";
 const initial: Lead[] = [];
+const statuses: LeadStatus[] = ["New", "Contacted", "Interested", "Converted", "Lost"];
 
 function localDate(): string {
   const now = new Date();
   const pad = (value: number) => String(value).padStart(2, "0");
-  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+  return now.getFullYear() + "-" + pad(now.getMonth() + 1) + "-" + pad(now.getDate());
 }
 
 function loadLeads(): Lead[] {
   try { const raw = localStorage.getItem(KEY); return raw ? JSON.parse(raw) as Lead[] : initial; }
   catch { return initial; }
+}
+
+function fromDatabase(row: { id: string; name: string; phone: string; need: string; status: LeadStatus; follow_up: string | null; created_at: string }): Lead {
+  return { id: row.id, name: row.name, phone: row.phone, need: row.need, status: row.status, followUp: row.follow_up ?? "", createdAt: row.created_at };
 }
 
 export default function DukaanDashboard() {
@@ -24,31 +31,124 @@ export default function DukaanDashboard() {
   const [showForm, setShowForm] = useState(false);
   const [notice, setNotice] = useState("Your workspace is ready. Add a real enquiry to start tracking customers.");
   const [form, setForm] = useState({ name: "", phone: "", need: "", followUp: "" });
+  const [user, setUser] = useState<User | null>(null);
+  const [authLoading, setAuthLoading] = useState(isSupabaseConfigured);
+  const [authMode, setAuthMode] = useState<"signin" | "signup">("signup");
+  const [authForm, setAuthForm] = useState({ email: "", password: "" });
+  const [busy, setBusy] = useState(false);
+  const [dataLoading, setDataLoading] = useState(false);
 
-  useEffect(() => { localStorage.setItem(KEY, JSON.stringify(leads)); }, [leads]);
+  useEffect(() => {
+    if (!supabase) return;
+    let active = true;
+    supabase.auth.getSession().then(({ data, error }) => {
+      if (!active) return;
+      if (error) setNotice(error.message);
+      setUser(data.session?.user ?? null);
+      setAuthLoading(false);
+    });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+      setAuthLoading(false);
+      if (!session) setLeads([]);
+    });
+    return () => { active = false; subscription.unsubscribe(); };
+  }, []);
+
+  useEffect(() => {
+    if (!isSupabaseConfigured) {
+      try { localStorage.setItem(KEY, JSON.stringify(leads)); } catch { /* storage may be unavailable */ }
+      return;
+    }
+    if (!supabase || !user) return;
+    let active = true;
+    setDataLoading(true);
+    supabase.from("customers").select("id,name,phone,need,status,follow_up,created_at").order("created_at", { ascending: false })
+      .then(({ data, error }) => {
+        if (!active) return;
+        if (error) setNotice("Could not load cloud customers: " + error.message);
+        else setLeads((data ?? []).map(row => fromDatabase(row as Parameters<typeof fromDatabase>[0])));
+        setDataLoading(false);
+      });
+    return () => { active = false; };
+  }, [user]);
+
   const filtered = useMemo(() => leads.filter(l => (statusFilter === "All" || l.status === statusFilter) && (l.name + l.phone + l.need).toLowerCase().includes(query.toLowerCase())), [leads, query, statusFilter]);
   const today = localDate();
   const due = leads.filter(l => l.followUp && l.followUp <= today && !["Converted", "Lost"].includes(l.status)).length;
   const converted = leads.filter(l => l.status === "Converted").length;
 
-  function addLead(e: FormEvent) {
+  async function handleAuth(e: FormEvent) {
+    e.preventDefault();
+    if (!supabase) return;
+    setBusy(true);
+    setNotice("");
+    const result = authMode === "signup"
+      ? await supabase.auth.signUp({ email: authForm.email.trim(), password: authForm.password })
+      : await supabase.auth.signInWithPassword({ email: authForm.email.trim(), password: authForm.password });
+    setBusy(false);
+    if (result.error) setNotice(result.error.message);
+    else if (authMode === "signup" && !result.data.session) setNotice("Account created. Check your email to confirm the address, then sign in.");
+    else setNotice("Signed in. Your customer workspace is loading.");
+  }
+
+  async function addLead(e: FormEvent) {
     e.preventDefault();
     if (!form.name.trim() || !form.phone.trim()) { setNotice("Customer name and phone are required."); return; }
-    const lead: Lead = { ...form, id: crypto.randomUUID(), name: form.name.trim(), phone: form.phone.trim(), need: form.need.trim() || "Not specified", status: "New", createdAt: today };
-    setLeads(prev => [lead, ...prev]); setForm({ name: "", phone: "", need: "", followUp: "" }); setShowForm(false); setNotice("Customer added. Remember to contact them and update their status.");
+    setBusy(true);
+    const payload = { name: form.name.trim(), phone: form.phone.trim(), need: form.need.trim() || "Not specified", status: "New" as LeadStatus, followUp: form.followUp, createdAt: today };
+    if (supabase && user) {
+      const { data, error } = await supabase.from("customers").insert({ user_id: user.id, name: payload.name, phone: payload.phone, need: payload.need, status: payload.status, follow_up: payload.followUp || null }).select("id,name,phone,need,status,follow_up,created_at").single();
+      setBusy(false);
+      if (error) { setNotice("Customer was not saved: " + error.message); return; }
+      setLeads(prev => [fromDatabase(data as Parameters<typeof fromDatabase>[0]), ...prev]);
+    } else {
+      setLeads(prev => [{ ...payload, id: crypto.randomUUID() }, ...prev]);
+      setBusy(false);
+    }
+    setForm({ name: "", phone: "", need: "", followUp: "" });
+    setShowForm(false);
+    setNotice(isSupabaseConfigured ? "Customer saved securely to your cloud workspace." : "Customer saved in this browser only. Connect Supabase to enable cloud sync.");
   }
-  function updateStatus(id: string, status: LeadStatus) { setLeads(prev => prev.map(l => l.id === id ? { ...l, status } : l)); setNotice("Customer status updated."); }
+
+  async function updateStatus(id: string, status: LeadStatus) {
+    if (supabase && user) {
+      const { error } = await supabase.from("customers").update({ status }).eq("id", id);
+      if (error) { setNotice("Status was not updated: " + error.message); return; }
+    }
+    setLeads(prev => prev.map(l => l.id === id ? { ...l, status } : l));
+    setNotice("Customer status updated.");
+  }
+
+  async function signOut() {
+    if (!supabase) return;
+    const { error } = await supabase.auth.signOut();
+    if (error) setNotice("Sign out failed: " + error.message);
+  }
+
+  if (isSupabaseConfigured && authLoading) return <div className="dukaan-auth-shell"><div className="dukaan-auth-card">Loading secure workspace…</div></div>;
+
+  if (isSupabaseConfigured && !user) return <div className="dukaan-auth-shell"><form className="dukaan-auth-card" onSubmit={handleAuth}>
+    <div className="dukaan-logo">D</div><div className="dukaan-eyebrow">DUKAANAI BUSINESS DESK</div><h1>{authMode === "signup" ? "Create your workspace" : "Welcome back"}</h1>
+    <p>Your customer records are private to your account.</p>
+    <label>Email address<input type="email" autoComplete="email" required value={authForm.email} onChange={e => setAuthForm(v => ({ ...v, email: e.target.value }))} placeholder="you@example.com" /></label>
+    <label>Password<input type="password" autoComplete={authMode === "signup" ? "new-password" : "current-password"} minLength={8} required value={authForm.password} onChange={e => setAuthForm(v => ({ ...v, password: e.target.value }))} placeholder="At least 8 characters" /></label>
+    <button className="dukaan-primary" disabled={busy}>{busy ? "Please wait…" : authMode === "signup" ? "Create account" : "Sign in"}</button>
+    {notice && <div className="dukaan-notice" role="status">{notice}</div>}
+    <button type="button" className="dukaan-auth-switch" onClick={() => { setAuthMode(v => v === "signup" ? "signin" : "signup"); setNotice(""); }}>{authMode === "signup" ? "Already have an account? Sign in" : "New to DukaanAI? Create an account"}</button>
+  </form></div>;
 
   return <div className="dukaan-shell">
-    <aside className="dukaan-sidebar"><a className="dukaan-brand" href="#top"><span className="dukaan-logo">D</span><span>DukaanAI<small>BUSINESS DESK</small></span></a><div className="dukaan-nav-label">WORKSPACE</div><a className="dukaan-nav active" href="#overview">▦ <span>Overview</span></a><a className="dukaan-nav" href="#customers">♙ <span>Customers & leads</span></a><a className="dukaan-nav" href="#followups">◷ <span>Follow-ups</span></a><div className="dukaan-side-note"><b>Early access</b><p>Customer records stay in this browser in this prototype. No cloud sync yet.</p></div></aside>
-    <main id="top" className="dukaan-main"><header className="dukaan-topbar"><span>Workspace <i>/</i> Overview</span><span className="dukaan-local"><b/> LOCAL WORKSPACE</span></header>
+    <aside className="dukaan-sidebar"><a className="dukaan-brand" href="#top"><span className="dukaan-logo">D</span><span>DukaanAI<small>BUSINESS DESK</small></span></a><div className="dukaan-nav-label">WORKSPACE</div><a className="dukaan-nav active" href="#overview">▦ <span>Overview</span></a><a className="dukaan-nav" href="#customers">♙ <span>Customers & leads</span></a><a className="dukaan-nav" href="#followups">◷ <span>Follow-ups</span></a><div className="dukaan-side-note"><b>{isSupabaseConfigured ? "Cloud workspace" : "Prototype mode"}</b><p>{isSupabaseConfigured ? "Your records are saved to your private account." : "Records stay in this browser until cloud setup is complete."}</p></div></aside>
+    <main id="top" className="dukaan-main"><header className="dukaan-topbar"><span>Workspace <i>/</i> Overview</span><span className="dukaan-local"><b/> {isSupabaseConfigured ? (user?.email ?? "CLOUD WORKSPACE") : "LOCAL WORKSPACE"} {user && <button className="dukaan-signout" onClick={signOut}>Sign out</button>}</span></header>
       <section id="overview" className="dukaan-welcome"><div><div className="dukaan-eyebrow">YOUR BUSINESS, IN CONTROL</div><h1>Good business starts with <em>good follow-up.</em></h1><p>Keep enquiries organized, remember who needs a call, and move every lead forward.</p></div><button className="dukaan-primary" onClick={() => setShowForm(v => !v)}>＋ Add customer</button></section>
       <section className="dukaan-stats"><article><span>TOTAL CUSTOMERS</span><strong>{leads.length}</strong><small>All saved enquiries</small></article><article><span>FOLLOW-UPS DUE</span><strong>{due}</strong><small>Due today or overdue</small></article><article><span>INTERESTED</span><strong>{leads.filter(l => l.status === "Interested").length}</strong><small>Warm opportunities</small></article><article><span>CONVERTED</span><strong>{converted}</strong><small>Marked as won by you</small></article></section>
-      {showForm && <form className="dukaan-form" onSubmit={addLead}><div className="dukaan-form-head"><div><b>Add a customer</b><p>Save an enquiry and set a reminder date.</p></div><button type="button" className="dukaan-close" onClick={() => setShowForm(false)} aria-label="Close">×</button></div><div className="dukaan-fields"><label>Customer name<input value={form.name} onChange={e => setForm({...form,name:e.target.value})} placeholder="e.g. Priya Sharma" required /></label><label>Phone number<input value={form.phone} onChange={e => setForm({...form,phone:e.target.value})} placeholder="+91..." required /></label><label>What do they need?<input value={form.need} onChange={e => setForm({...form,need:e.target.value})} placeholder="Product, service, course..." /></label><label>Follow-up date<input type="date" value={form.followUp} onChange={e => setForm({...form,followUp:e.target.value})} /></label></div><button className="dukaan-primary" type="submit">Save customer</button></form>}
+      {showForm && <form className="dukaan-form" onSubmit={addLead}><div className="dukaan-form-head"><div><b>Add a customer</b><p>Save an enquiry and set a reminder date.</p></div><button type="button" className="dukaan-close" onClick={() => setShowForm(false)} aria-label="Close">×</button></div><div className="dukaan-fields"><label>Customer name<input value={form.name} onChange={e => setForm({...form,name:e.target.value})} placeholder="Customer name" required /></label><label>Phone number<input value={form.phone} onChange={e => setForm({...form,phone:e.target.value})} placeholder="+91..." required /></label><label>What do they need?<input value={form.need} onChange={e => setForm({...form,need:e.target.value})} placeholder="Product, service, course..." /></label><label>Follow-up date<input type="date" value={form.followUp} onChange={e => setForm({...form,followUp:e.target.value})} /></label></div><button className="dukaan-primary" type="submit" disabled={busy}>{busy ? "Saving…" : "Save customer"}</button></form>}
       {notice && <div className="dukaan-notice" role="status">{notice}</div>}
-      <section id="customers" className="dukaan-card"><div className="dukaan-section-head"><div><div className="dukaan-eyebrow">CUSTOMER RELATIONSHIPS</div><h2>Customers & leads</h2></div><button className="dukaan-secondary" onClick={() => setShowForm(true)}>＋ New enquiry</button></div><div className="dukaan-toolbar"><input aria-label="Search customers" value={query} onChange={e => setQuery(e.target.value)} placeholder="Search name, phone or enquiry..." /><select aria-label="Filter by status" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>{["All","New","Contacted","Interested","Converted","Lost"].map(s => <option key={s}>{s}</option>)}</select></div><div className="dukaan-table-wrap"><table className="dukaan-table"><thead><tr><th>CUSTOMER</th><th>ENQUIRY</th><th>STATUS</th><th>FOLLOW-UP</th><th>UPDATE STATUS</th></tr></thead><tbody>{filtered.map(l => <tr key={l.id}><td><b>{l.name}</b><small>{l.phone}</small></td><td>{l.need}</td><td><span className={"dukaan-status s-" + l.status.toLowerCase()}>{l.status}</span></td><td>{l.followUp || "Not set"}</td><td><select aria-label={"Update status for " + l.name} value={l.status} onChange={e => updateStatus(l.id, e.target.value as LeadStatus)}>{["New","Contacted","Interested","Converted","Lost"].map(s => <option key={s}>{s}</option>)}</select></td></tr>)}</tbody></table>{filtered.length === 0 && <div className="dukaan-empty">No matching customers. Add a new enquiry to get started.</div>}</div></section>
-      <section id="followups" className="dukaan-bottom-grid"><article className="dukaan-card"><div className="dukaan-eyebrow">NEXT ACTIONS</div><h2>Follow-up list</h2>{leads.filter(l => l.followUp && !["Converted","Lost"].includes(l.status)).sort((a,b)=>a.followUp.localeCompare(b.followUp)).slice(0,4).map(l=><div className="dukaan-follow" key={l.id}><span className="dukaan-follow-dot"/><div><b>{l.name}</b><small>{l.need}</small></div><time>{l.followUp}</time></div>)}{leads.every(l => !l.followUp || ["Converted","Lost"].includes(l.status)) && <p className="dukaan-muted">No follow-ups scheduled yet.</p>}</article><article className="dukaan-card dukaan-assist"><div className="dukaan-eyebrow">AI ASSISTANT</div><h2>Your next best action</h2><p>This first release tracks customers and follow-up dates. AI-generated replies, WhatsApp messaging, reminders and automatic lead scoring are not connected yet.</p><span className="dukaan-coming">PLANNED · NOT ACTIVE</span></article></section>
-      <footer className="dukaan-footer">DUKAANAI · EARLY MVP <span>Prototype only · No messages or payments are sent</span></footer>
+      {dataLoading && <div className="dukaan-notice">Loading cloud customers…</div>}
+      <section id="customers" className="dukaan-card"><div className="dukaan-section-head"><div><div className="dukaan-eyebrow">CUSTOMER RELATIONSHIPS</div><h2>Customers & leads</h2></div><button className="dukaan-secondary" onClick={() => setShowForm(true)}>＋ New enquiry</button></div><div className="dukaan-toolbar"><input aria-label="Search customers" value={query} onChange={e => setQuery(e.target.value)} placeholder="Search name, phone or enquiry..." /><select aria-label="Filter by status" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}><option>All</option>{statuses.map(s => <option key={s}>{s}</option>)}</select></div><div className="dukaan-table-wrap"><table className="dukaan-table"><thead><tr><th>CUSTOMER</th><th>ENQUIRY</th><th>STATUS</th><th>FOLLOW-UP</th><th>UPDATE STATUS</th></tr></thead><tbody>{filtered.map(l => <tr key={l.id}><td><b>{l.name}</b><small>{l.phone}</small></td><td>{l.need}</td><td><span className={"dukaan-status s-" + l.status.toLowerCase()}>{l.status}</span></td><td>{l.followUp || "Not set"}</td><td><select aria-label={"Update status for " + l.name} value={l.status} onChange={e => updateStatus(l.id, e.target.value as LeadStatus)}>{statuses.map(s => <option key={s}>{s}</option>)}</select></td></tr>)}</tbody></table>{filtered.length === 0 && <div className="dukaan-empty">No matching customers. Add a new enquiry to get started.</div>}</div></section>
+      <section id="followups" className="dukaan-bottom-grid"><article className="dukaan-card"><div className="dukaan-eyebrow">NEXT ACTIONS</div><h2>Follow-up list</h2>{leads.filter(l => l.followUp && !["Converted","Lost"].includes(l.status)).sort((a,b)=>a.followUp.localeCompare(b.followUp)).slice(0,4).map(l=><div className="dukaan-follow" key={l.id}><span className="dukaan-follow-dot"/><div><b>{l.name}</b><small>{l.need}</small></div><time>{l.followUp}</time></div>)}{leads.every(l => !l.followUp || ["Converted","Lost"].includes(l.status)) && <p className="dukaan-muted">No follow-ups scheduled yet.</p>}</article><article className="dukaan-card dukaan-assist"><div className="dukaan-eyebrow">AI ASSISTANT</div><h2>Your next best action</h2><p>This release supports customer accounts and private cloud records when configured. AI-generated replies, WhatsApp messaging, reminders and automatic lead scoring are not connected yet.</p><span className="dukaan-coming">PLANNED · NOT ACTIVE</span></article></section>
+      <footer className="dukaan-footer">DUKAANAI · EARLY MVP <span>{isSupabaseConfigured ? "Cloud workspace · Private account" : "Local prototype · Cloud setup pending"} · No messages or payments are sent</span></footer>
     </main>
   </div>;
 }

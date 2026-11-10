@@ -4,13 +4,9 @@ type LeadStatus = "New" | "Contacted" | "Interested" | "Converted" | "Lost";
 type Lead = { id: string; name: string; phone: string; need: string; status: LeadStatus; followUp: string; createdAt: string };
 
 const KEY = "dukaanai-leads-v1";
-const initial: Lead[] = [
-  { id: "l1", name: "Aarav Sharma", phone: "+91 98765 43210", need: "Website enquiry", status: "Interested", followUp: "2026-11-12", createdAt: "2026-11-10" },
-  { id: "l2", name: "Meera Patel", phone: "+91 98765 12340", need: "Course admission", status: "Contacted", followUp: "2026-11-11", createdAt: "2026-11-10" },
-  { id: "l3", name: "Kabir Khan", phone: "+91 99887 76655", need: "Price enquiry", status: "New", followUp: "2026-11-11", createdAt: "2026-11-11" },
-];
+const initial: Lead[] = [];
 
-function loadLeads(): Lead[] {
+function localDate(): string {\n  const now = new Date();\n  const pad = (value: number) => String(value).padStart(2, "0");\n  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;\n}\n\nfunction loadLeads(): Lead[] {
   try { const raw = localStorage.getItem(KEY); return raw ? JSON.parse(raw) as Lead[] : initial; }
   catch { return initial; }
 }
@@ -25,7 +21,7 @@ export default function DukaanDashboard() {
 
   useEffect(() => { localStorage.setItem(KEY, JSON.stringify(leads)); }, [leads]);
   const filtered = useMemo(() => leads.filter(l => (statusFilter === "All" || l.status === statusFilter) && (l.name + l.phone + l.need).toLowerCase().includes(query.toLowerCase())), [leads, query, statusFilter]);
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localDate();
   const due = leads.filter(l => l.followUp && l.followUp <= today && !["Converted", "Lost"].includes(l.status)).length;
   const converted = leads.filter(l => l.status === "Converted").length;
 
